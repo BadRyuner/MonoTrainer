@@ -19,6 +19,8 @@ var myGame = Process.GetProcessesByName("gameName")[0];
 SDK.MonoBridge.Init(myGame);
 ```
 5) Do your funny things!
+# Examples
+[The Last Stand Damned Souls Trainer](https://github.com/BadRyuner/MonoTrainer/blob/master/TheLastSpellTrainer/Program.cs)
 # Lib can do 100%
 - Get/Set non-generic fields and non-generic non-valuetype (!!!) properties.
 - Call non-generic methods (with instance and static) with 0-5 args.
