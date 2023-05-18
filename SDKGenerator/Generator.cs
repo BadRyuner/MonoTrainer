@@ -12,6 +12,7 @@ using AsmResolver;
 using System.Data.SqlTypes;
 using AsmResolver.DotNet.Serialized;
 using System.ComponentModel.Design;
+using System.Linq;
 
 namespace SDKGenerator;
 public class Generator
@@ -52,6 +53,7 @@ public class Generator
 	MethodDefinition Unbox;
 	MethodDefinition ReadPtr;       // generic fck
 	MethodDefinition ReadVTPtr;     // generic fck
+	MethodDefinition GetVirtFunc;
 	MethodDefinition CallMethod0;	// generic fck
 	MethodDefinition CallMethod1;	// generic fck
 	MethodDefinition CallMethod2;   // generic fck
@@ -121,6 +123,7 @@ public class Generator
 		CallMethod4 = Mono.Methods.First(m => m.Name == nameof(MonoBridge.CallMonoFunction) && m.GenericParameters.Count == 4);
 		CallMethod5 = Mono.Methods.First(m => m.Name == nameof(MonoBridge.CallMonoFunction) && m.GenericParameters.Count == 5);
 		GetMethodInfoWithoutArgsInfo = Mono.Methods.First(m => m.Name == nameof(MonoBridge.GetMonoFunctionFromName));
+		GetVirtFunc = Mono.Methods.First(m => m.Name == nameof(MonoBridge.GetVirtFunction));
 
 		//var type = SDKModule.CorLibTypeFactory.CorLibScope.CreateTypeReference("System", "Type");
 		//var rtype = SDKModule.CorLibTypeFactory.CorLibScope.CreateTypeReference("System", "RuntimeTypeHandle");
@@ -139,7 +142,7 @@ public class Generator
 			WriteType(i, out _);
 		}
 
-		var ue = TargetAssemblyModule.AssemblyReferences.First(m => m.Name == "UnityEngine.CoreModule")?.Resolve().ManifestModule;
+		var ue = TargetAssemblyModule.AssemblyReferences.FirstOrDefault(m => m.Name == "UnityEngine.CoreModule")?.Resolve().ManifestModule;
 		if (ue != null)
 		{
 			goodTypes = ue.TopLevelTypes.Where(t => !t.IsAbstract && !t.IsInterface && t.GenericParameters.Count == 0);
@@ -149,7 +152,7 @@ public class Generator
 			}
 		}
 
-		var bas = TargetAssemblyModule.AssemblyReferences.First(m => m.Name == "mscorlib")?.Resolve().ManifestModule;
+		var bas = TargetAssemblyModule.AssemblyReferences.FirstOrDefault(m => m.Name == "mscorlib" || m.Name == "netstandard")?.Resolve().ManifestModule;
 		if (bas != null)
 		{
 			goodTypes = bas.TopLevelTypes.Where(t => !t.IsAbstract && !t.IsInterface && t.GenericParameters.Count == 0);
@@ -441,7 +444,15 @@ public class Generator
 			if (genericMode) 
 				continue;
 
-			if (field.Signature.FieldType is GenericInstanceTypeSignature || field.Signature.FieldType.ElementType == ElementType.SzArray) continue;
+			bool genericField = false;
+
+			if (field.Signature.FieldType.ElementType == ElementType.SzArray) continue;
+			if (field.Signature.FieldType is GenericInstanceTypeSignature gits)
+			{
+				genericField = true;
+				if (GetProxyTypeSafe(gits.GenericType.Resolve()) == null) continue;
+			}
+			else gits = null;
 			//if (genericMode && field.Signature.FieldType.ElementType == ElementType.GenericInst) continue;
 
 			var fieldtype = field.Signature.FieldType.Resolve();
@@ -454,6 +465,16 @@ public class Generator
 			}
 			if (target == null) continue;
 			if (target.IsTypeOf("System", "Void")) continue;
+			TypeSignature[] genericFieldSigs = null;
+			var buf = genericField ? gits.TypeArguments.Select(t => GetProxyTypeSafe(t.Resolve())) : null;
+			if (buf != null)
+			{
+				if (!buf.Any(t => t == null))
+					genericFieldSigs = buf.Select(t => t.ToTypeSignature()).ToArray();
+				else
+					continue;
+			}
+			var targetTypeSig = genericField ? target.MakeGenericInstanceType(genericFieldSigs) : target.ToTypeSignature();
 
 			var info = new FieldDefinition(field.Name + "_info", FieldAttributes.Static, SDKModule.CorLibTypeFactory.UIntPtr);
 			init.Add(CilOpCodes.Ldsfld, klass);
@@ -464,8 +485,8 @@ public class Generator
 
 			if (field.IsStatic)
 			{
-				var getter = new MethodDefinition($"get_{field.Name}", MethodAttributes.Public | MethodAttributes.Static | MethodAttributes.HideBySig | MethodAttributes.SpecialName, MethodSignature.CreateStatic(target.ToTypeSignature()));
-				var setter = new MethodDefinition($"set_{field.Name}", MethodAttributes.Public | MethodAttributes.Static | MethodAttributes.HideBySig | MethodAttributes.SpecialName, MethodSignature.CreateStatic(SDKModule.CorLibTypeFactory.Void, target.ToTypeSignature()));
+				var getter = new MethodDefinition($"get_{field.Name}", MethodAttributes.Public | MethodAttributes.Static | MethodAttributes.HideBySig | MethodAttributes.SpecialName, MethodSignature.CreateStatic(targetTypeSig));
+				var setter = new MethodDefinition($"set_{field.Name}", MethodAttributes.Public | MethodAttributes.Static | MethodAttributes.HideBySig | MethodAttributes.SpecialName, MethodSignature.CreateStatic(SDKModule.CorLibTypeFactory.Void, targetTypeSig));
 
 				var gBody = new CilMethodBody(getter);
 				getter.CilMethodBody = gBody;
@@ -476,18 +497,18 @@ public class Generator
 
 				g.Add(CilOpCodes.Ldsfld, vtable);
 				g.Add(CilOpCodes.Ldsfld, info);
-				g.Add(CilOpCodes.Call, GetStaticVal.MakeGenericInstanceMethod(target.ToTypeSignature()));
+				g.Add(CilOpCodes.Call, GetStaticVal.MakeGenericInstanceMethod(targetTypeSig));
 				g.Add(CilOpCodes.Ret);
 
 				s.Add(CilOpCodes.Ldsfld, vtable);
 				s.Add(CilOpCodes.Ldsfld, info);
 				s.Add(CilOpCodes.Ldarg_0);
-				s.Add(CilOpCodes.Call, SetStaticVal.MakeGenericInstanceMethod(target.ToTypeSignature()));
+				s.Add(CilOpCodes.Call, SetStaticVal.MakeGenericInstanceMethod(targetTypeSig));
 				s.Add(CilOpCodes.Ret);
 
 				clone.Methods.Add(getter);
 				clone.Methods.Add(setter);
-				var prop = new PropertyDefinition(field.Name, PropertyAttributes.None, new PropertySignature(CallingConventionAttributes.Default, target.ToTypeSignature(), Array.Empty<TypeSignature>()));
+				var prop = new PropertyDefinition(field.Name, PropertyAttributes.None, new PropertySignature(CallingConventionAttributes.Default, targetTypeSig, Array.Empty<TypeSignature>()));
 				prop.SetSemanticMethods(getter, setter);
 				clone.Properties.Add(prop);
 				// todo: check static proxy
@@ -496,7 +517,7 @@ public class Generator
 			{
 				if (_this == null) // unsafe fck
 				{
-					clone.Fields.Add(new FieldDefinition(field.Name, FieldAttributes.Public, target.ToTypeSignature()));
+					clone.Fields.Add(new FieldDefinition(field.Name, FieldAttributes.Public, targetTypeSig));
 				}
 				else
 				{
@@ -507,17 +528,17 @@ public class Generator
 					init.Add(CilOpCodes.Conv_U4);
 					init.Add(CilOpCodes.Stsfld, offset);
 
-					var getter = new MethodDefinition($"get_{field.Name}", MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.SpecialName, MethodSignature.CreateInstance(target.ToTypeSignature())); // GetGenericPtr(target)
+					var getter = new MethodDefinition($"get_{field.Name}", MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.SpecialName, MethodSignature.CreateInstance(targetTypeSig));
 					var gBody = new CilMethodBody(getter);
 					getter.CilMethodBody = gBody;
 					var g = gBody.Instructions;
 					g.Add(CilOpCodes.Ldarg_0);
 					g.Add(CilOpCodes.Ldfld, _this);
 					g.Add(CilOpCodes.Ldsfld, offset);
-					g.Add(CilOpCodes.Call, GetInstanceFieldValue.MakeGenericInstanceMethod(target.ToTypeSignature()));
+					g.Add(CilOpCodes.Call, GetInstanceFieldValue.MakeGenericInstanceMethod(targetTypeSig));
 					g.Add(CilOpCodes.Ret);
 
-					var setter = new MethodDefinition($"set_{field.Name}", MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.SpecialName, MethodSignature.CreateInstance(SDKModule.CorLibTypeFactory.Void, target.ToTypeSignature())); // GetGenericPtr(target)
+					var setter = new MethodDefinition($"set_{field.Name}", MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.SpecialName, MethodSignature.CreateInstance(SDKModule.CorLibTypeFactory.Void, targetTypeSig)); // GetGenericPtr(target)
 					var sBody = new CilMethodBody(setter);
 					setter.CilMethodBody = sBody;
 					var s = sBody.Instructions;
@@ -525,12 +546,12 @@ public class Generator
 					s.Add(CilOpCodes.Ldfld, _this);
 					s.Add(CilOpCodes.Ldsfld, offset);
 					s.Add(CilOpCodes.Ldarg_1);
-					s.Add(CilOpCodes.Call, SetInstanceFieldValue.MakeGenericInstanceMethod(target.ToTypeSignature()));
+					s.Add(CilOpCodes.Call, SetInstanceFieldValue.MakeGenericInstanceMethod(targetTypeSig));
 					s.Add(CilOpCodes.Ret);
 
 					clone.Methods.Add(getter);
 					clone.Methods.Add(setter);
-					var prop = new PropertyDefinition(field.Name, PropertyAttributes.None, new PropertySignature(CallingConventionAttributes.HasThis, target.ToTypeSignature(), Array.Empty<TypeSignature>()));
+					var prop = new PropertyDefinition(field.Name, PropertyAttributes.None, new PropertySignature(CallingConventionAttributes.HasThis, targetTypeSig, Array.Empty<TypeSignature>()));
 					prop.SetSemanticMethods(getter, setter);
 					clone.Properties.Add(prop);
 				}
@@ -539,22 +560,35 @@ public class Generator
 
 		foreach(var method in def.Methods)
 		{
-			//if (def.IsTypeOf("System", "Type"))
-			//	Console.Write(1);
-
-			if (method.IsVirtual || method.IsConstructor || method.GenericParameters.Count != 0 || method.Parameters.Any(p => p.ParameterType is GenericInstanceTypeSignature)) continue;
+			if (method.IsConstructor || method.GenericParameters.Count != 0 || method.Parameters.Any(p => p.ParameterType is GenericInstanceTypeSignature)) continue;
 			int paramCount = method.Parameters.Count;
 			if (paramCount > 5) continue; // wip
 			if (method.IsStatic == false && _this == null) continue;
 			if (method.Name[0] == '<') continue;
 			if (method.Signature.ReturnType.ElementType == ElementType.SzArray) continue;
-			if (method.Parameters.Any(p => p.ParameterType is ArrayBaseTypeSignature)) continue;
-			
-			var rettype = method.Signature.ReturnType.ElementType == ElementType.Var ? new GenericParameterSignature(GenericParameterType.Type, ((GenericParameterSignature)method.Signature.ReturnType).Index) : GetProxyTypeSafe(method.Signature.ReturnType.Resolve())?.ToTypeSignature();
+			if (method.Parameters.Any(p => p.ParameterType is ArrayBaseTypeSignature || p.ParameterType is ByReferenceTypeSignature)) continue;
 
-			var args = method.Signature.ParameterTypes.Select(p => genericMode ? null : GetProxyTypeSafe(p.Resolve()));
+			//if (def.IsTypeOf("System.Collections.Generic", "List`1") && method.Name == "get_item")
+			//	Console.Write(1);
+
+			TypeSignature rettype = null;
+			var rettypeDef = method.Signature.ReturnType.ElementType == ElementType.Var ? null : GetProxyTypeSafe(method.Signature.ReturnType.Resolve());
+			if (method.Signature.ReturnType is GenericInstanceTypeSignature gits)
+			{
+				if (rettypeDef == null) continue;
+				if (gits.TypeArguments.Any(a => a is GenericParameterSignature)) continue;
+				var methodGenArgs = gits.TypeArguments.Select(t => GetProxyTypeSafe(t.Resolve()));
+				if (methodGenArgs.Any(a => a == null)) continue;
+				var methodGenSigs = methodGenArgs.Select(a => a.ToTypeSignature()).ToArray();
+				rettype = rettypeDef.MakeGenericInstanceType(methodGenSigs);
+			}
+			else
+			{
+				rettype = method.Signature.ReturnType.ElementType == ElementType.Var ? new GenericParameterSignature(((GenericParameterSignature)method.Signature.ReturnType).ParameterType, ((GenericParameterSignature)method.Signature.ReturnType).Index) : rettypeDef?.ToTypeSignature();
+			}
+
+			var args = method.Signature.ParameterTypes.Select(p => p is GenericParameterSignature gps ? new GenericParameterSignature(SDKModule, gps.ParameterType, gps.Index) : GetProxyTypeSafe(p.Resolve())?.ToTypeSignature());
 			if (args.Any(a => a == null) || rettype == null) continue;
-			var trueArgs = args.Select(a => a.ToTypeSignature());
 
 			var info = new FieldDefinition($"{method.Name}_info", FieldAttributes.Static, SDKModule.CorLibTypeFactory.UIntPtr);
 			var generic_info = genericMode ? new MemberReference(new TypeSpecification(new GenericInstanceTypeSignature(clone, true, gensigs)), info.Name, info.Signature) : null;
@@ -564,6 +598,7 @@ public class Generator
 			{
 				init.Add(CilOpCodes.Ldsfld, new MemberReference(new TypeSpecification(new GenericInstanceTypeSignature(clone, true, gensigs)), "klass", klass.Signature));
 				init.Add(CilOpCodes.Ldstr, method.Name);
+				init.Add(CilOpCodes.Ldc_I4, method.Parameters.Count);
 				init.Add(CilOpCodes.Call, GetMethodInfoWithoutArgsInfo);
 				init.Add(CilOpCodes.Stsfld, generic_info);
 			}
@@ -575,7 +610,7 @@ public class Generator
 				init.Add(CilOpCodes.Stsfld, info);
 			}
 
-			var proxy = new MethodDefinition(method.Name, method.Attributes, method.IsStatic ? MethodSignature.CreateStatic(rettype, trueArgs) : MethodSignature.CreateInstance(rettype, trueArgs));
+			var proxy = new MethodDefinition(method.Name, method.Attributes, method.IsStatic ? MethodSignature.CreateStatic(rettype, args) : MethodSignature.CreateInstance(rettype, args));
 			
 			if (proxy.IsAbstract) proxy.IsAbstract = false;
 
@@ -588,10 +623,24 @@ public class Generator
 			proxy.CilMethodBody = body;
 			var instr = body.Instructions;
 
+			if (method.IsVirtual)
+			{
+				instr.Add(CilOpCodes.Ldarg_0);
+				if (genericMode)
+					instr.Add(CilOpCodes.Ldfld, generic_this);
+				else
+					instr.Add(CilOpCodes.Ldfld, _this);
+			}
+
 			if (genericMode)
 				instr.Add(CilOpCodes.Ldsfld, generic_info);
 			else
 				instr.Add(CilOpCodes.Ldsfld, info);
+
+			if (method.IsVirtual)
+			{
+				instr.Add(CilOpCodes.Call, GetVirtFunc);
+			}
 
 			if (method.IsStatic)
 				instr.Add(CilOpCodes.Ldc_I4_0);

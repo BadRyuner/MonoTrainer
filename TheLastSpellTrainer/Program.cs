@@ -1,5 +1,4 @@
-﻿using SDK;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 Console.WriteLine("Hello, bro!");
 
@@ -7,7 +6,7 @@ TryFindGame:
 var good = true;
 try
 {
-	SDK.MonoBridge.Init(Process.GetProcessesByName("The Last Spell")[0]); //The Last Spell
+	SDK.MonoBridge.Init(Process.GetProcessesByName("The Last Spell")[0]);
 }
 catch(Exception)
 {

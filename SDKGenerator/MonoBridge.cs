@@ -34,6 +34,7 @@ public static unsafe class MonoBridge
 	const string mono_string_new = "mono_string_new";
 	const string mono_value_box = "mono_value_box";
 	const string mono_class_from_mono_type = "mono_class_from_mono_type";
+	const string mono_object_get_virtual_method = "mono_object_get_virtual_method";
 
 	static nuint mono_domain_get_ptr;
 	static nuint mono_thread_attach_ptr;
@@ -55,6 +56,7 @@ public static unsafe class MonoBridge
 	static nuint mono_string_new_ptr;
 	static nuint mono_value_box_ptr;
 	static nuint mono_class_from_mono_type_ptr;
+	static nuint mono_object_get_virtual_method_ptr;
 
 	static Process game;
 	static Shellcode shell;
@@ -131,6 +133,7 @@ public static unsafe class MonoBridge
 		mono_string_new_ptr = (nuint)shell.GetProcAddress(monomodule, mono_string_new);
 		mono_value_box_ptr = (nuint)shell.GetProcAddress(monomodule, mono_value_box);
 		mono_class_from_mono_type_ptr = (nuint)shell.GetProcAddress(monomodule, mono_class_from_mono_type);
+		mono_object_get_virtual_method_ptr = (nuint)shell.GetProcAddress(monomodule, mono_object_get_virtual_method);
 
 #if DEBUG
 		Console.WriteLine($"mono_domain_get_ptr {mono_domain_get_ptr}");
@@ -152,6 +155,7 @@ public static unsafe class MonoBridge
 		Console.WriteLine($"mono_type_get_class_ptr {mono_type_get_class_ptr}");
 		Console.WriteLine($"mono_string_new_ptr {mono_string_new_ptr}");
 		Console.WriteLine($"mono_class_from_mono_type_ptr {mono_class_from_mono_type_ptr}");
+		Console.WriteLine($"mono_object_get_virtual_method_ptr {mono_object_get_virtual_method_ptr}");
 #endif
 
 		domain = CallFunc(mono_domain_get_ptr);
@@ -296,11 +300,16 @@ public static unsafe class MonoBridge
 		}
 	}
 
-	internal static nuint GetMonoFunctionFromName(nuint klass, string name)
+	internal static nuint GetMonoFunctionFromName(nuint klass, string name, int args)
 	{
 		lock(locker)
 		{
-			return CallFunc(mono_class_get_method_from_name_ptr, klass, stringsBuffer.Add(Encoding.UTF8.GetBytes(name + '\0')));
+			var result = CallFunc(mono_class_get_method_from_name_ptr, klass, stringsBuffer.Add(Encoding.UTF8.GetBytes(name + '\0')), (nuint)args);
+#if DEBUG
+			if (result == 0)
+				Console.WriteLine($"Cant get func from name for {name}");
+#endif
+			return result;
 		}
 	}
 
@@ -480,6 +489,20 @@ public static unsafe class MonoBridge
 			else
 				argsPtrBuffer.Add(ref arg5);
 			return CallMonoFunctionImpl(func, _this, (nuint)argsPtrBuffer.Address);
+		}
+	}
+
+	internal static nuint GetVirtFunction(nuint _this, nuint func)
+	{
+		lock(locker)
+		{
+			var result = CallFunc(mono_object_get_virtual_method_ptr, _this, func);
+#if DEBUG
+			Console.WriteLine($"GetVirtFunction({_this}, {func}) -> {result}");
+#endif
+			if (result == 0)
+				throw new Exception("Cant get virtual function!");
+			return result;
 		}
 	}
 
