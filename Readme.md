@@ -1,5 +1,5 @@
 # MonoTrainer
-Funny tool for your trainers for unity-mono based windows games!
+Funny tool for your trainers for unity-mono based windows 64bit games!
 # WIP
 # Getting Starter
 1) SDKGenerator.exe "path/to/Assembly-Csharp.dll"
@@ -18,14 +18,16 @@ Funny tool for your trainers for unity-mono based windows games!
 var myGame = Process.GetProcessesByName("gameName")[0];
 SDK.MonoBridge.Init(myGame);
 ```
-5) Do your funny things!
+5) Have fun with GameSDK.* namespace!
 # Examples
-[The Last Stand Damned Souls Trainer](https://github.com/BadRyuner/MonoTrainer/blob/master/TheLastSpellTrainer/Program.cs)
+[The Last Stand Pseudo Trainer for old version](https://github.com/BadRyuner/MonoTrainer/blob/master/TheLastSpellTrainer/Program.cs)
 # Lib can do 100%
 - Get/Set non-generic fields and non-generic non-valuetype (!!!) properties.
 - Call non-generic methods (with instance and static) with 0-5 args.
+- Read/Create mono strings.
+
+# Partially working
+- Generics. Generic types (not generic methods!!) with 1 argument are currently supported, only methods.
 
 # Not working at the moment
-- String things. You can only get first char and length, hahah. Maybe in the future it will be possible to alloc strings and read/write them.
-- Generic things. Very scary thing. There is little information on Google about interacting with Generic via mono native api. This causes problems with games that use Singleton<Aboba>.Instance instead of Aboba.Instance.
 - And a lot of things, probably.
