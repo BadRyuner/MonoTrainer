@@ -8,10 +8,10 @@ Funny tool for your trainers for unity-mono based windows games!
 3) Add generated GameSDK.dll to your project and add this references:
 ```
     <ItemGroup>
-		<PackageReference Include="Reloaded.Assembler" Version="1.0.14" />
-		<PackageReference Include="Reloaded.Injector" Version="1.2.5" />
-		<PackageReference Include="Reloaded.Memory" Version="8.1.0" />
-	</ItemGroup>
+        <PackageReference Include="Reloaded.Assembler" Version="1.0.14" />
+        <PackageReference Include="Reloaded.Injector" Version="1.2.5" />
+        <PackageReference Include="Reloaded.Memory" Version="8.1.0" />
+    </ItemGroup>
 ```
 4) Init GameSDK:
 ```csharp

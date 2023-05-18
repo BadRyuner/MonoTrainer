@@ -6,6 +6,12 @@ internal unsafe class Program
 {
 	static void Main(string[] args)
 	{
+#if true
+		args = new string[] { "D:\\Games\\The Last Spell\\The Last Spell_Data\\Managed\\TheLastStand.dll" };
+		// D:\Steam\steamapps\common\PULSARLostColony\PULSAR_LostColony_Data\Managed\LevelScanner.dll
+		// D:\\Games\\The Last Spell\\The Last Spell_Data\\Managed\\TheLastStand.dll
+#endif
+
 		if (args.Length == 0)
 		{
 			Console.WriteLine("Wrong args!");
