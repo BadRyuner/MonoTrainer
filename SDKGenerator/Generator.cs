@@ -149,14 +149,14 @@ public class Generator
 			WriteType(bas.TopLevelTypes.First(t => t.FullName == "System.Array"), out ArrayType);
 			ArraySig = ArrayType.ToTypeSignature();
 
-			goodTypes = bas.TopLevelTypes.Where(t => !t.IsAbstract && !t.IsInterface && t.GenericParameters.Count == 0);
+			goodTypes = bas.TopLevelTypes.Where(t =>!t.IsInterface && t.GenericParameters.Count == 0);
 			foreach (var i in goodTypes)
 			{
 				WriteType(i, out _);
 			}
 		}
 
-		goodTypes = TargetAssemblyModule.TopLevelTypes.Where(t => !t.IsAbstract && !t.IsInterface && t.GenericParameters.Count == 0);
+		goodTypes = TargetAssemblyModule.TopLevelTypes.Where(t => !t.IsInterface && t.GenericParameters.Count == 0);
 
 		foreach (var i in goodTypes)
 		{
@@ -166,7 +166,7 @@ public class Generator
 		var ue = TargetAssemblyModule.AssemblyReferences.FirstOrDefault(m => m.Name == "UnityEngine.CoreModule")?.Resolve().ManifestModule;
 		if (ue != null)
 		{
-			goodTypes = ue.TopLevelTypes.Where(t => !t.IsAbstract && !t.IsInterface && t.GenericParameters.Count == 0);
+			goodTypes = ue.TopLevelTypes.Where(t => !t.IsInterface && t.GenericParameters.Count == 0);
 			foreach (var i in goodTypes)
 			{
 				WriteType(i, out _);

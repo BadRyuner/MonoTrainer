@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Reloaded.Assembler;
@@ -10,7 +11,7 @@ using Reloaded.Memory.Utilities;
 
 namespace SDKGenerator;
 #if true
-public static unsafe class MonoBridge
+public static class MonoBridge
 {
 	const string mono = "mono-2.0-bdwgc.dll";
 	const string mono_domain_get = "mono_get_root_domain";
@@ -35,6 +36,8 @@ public static unsafe class MonoBridge
 	const string mono_value_box = "mono_value_box";
 	const string mono_class_from_mono_type = "mono_class_from_mono_type";
 	const string mono_object_get_virtual_method = "mono_object_get_virtual_method";
+	const string mono_gc_collect = "mono_gc_collect";
+	const string mono_gc_max_generation = "mono_gc_max_generation";
 
 	static nuint mono_domain_get_ptr;
 	static nuint mono_thread_attach_ptr;
@@ -57,6 +60,8 @@ public static unsafe class MonoBridge
 	static nuint mono_value_box_ptr;
 	static nuint mono_class_from_mono_type_ptr;
 	static nuint mono_object_get_virtual_method_ptr;
+	static nuint mono_gc_collect_ptr;
+	static nuint mono_gc_max_generation_ptr;
 
 	static Process game;
 	static Shellcode shell;
@@ -134,6 +139,8 @@ public static unsafe class MonoBridge
 		mono_value_box_ptr = (nuint)shell.GetProcAddress(monomodule, mono_value_box);
 		mono_class_from_mono_type_ptr = (nuint)shell.GetProcAddress(monomodule, mono_class_from_mono_type);
 		mono_object_get_virtual_method_ptr = (nuint)shell.GetProcAddress(monomodule, mono_object_get_virtual_method);
+		mono_gc_collect_ptr = (nuint)shell.GetProcAddress(monomodule, mono_gc_collect);
+		mono_gc_max_generation_ptr = (nuint)shell.GetProcAddress(monomodule, mono_gc_max_generation);
 
 #if DEBUG
 		Console.WriteLine($"mono_domain_get_ptr {mono_domain_get_ptr}");
@@ -156,6 +163,8 @@ public static unsafe class MonoBridge
 		Console.WriteLine($"mono_string_new_ptr {mono_string_new_ptr}");
 		Console.WriteLine($"mono_class_from_mono_type_ptr {mono_class_from_mono_type_ptr}");
 		Console.WriteLine($"mono_object_get_virtual_method_ptr {mono_object_get_virtual_method_ptr}");
+		Console.WriteLine($"mono_gc_collect_ptr {mono_gc_collect_ptr}");
+		Console.WriteLine($"mono_gc_max_generation_ptr {mono_gc_max_generation_ptr}");
 #endif
 
 		domain = CallFunc(mono_domain_get_ptr);
@@ -166,6 +175,16 @@ public static unsafe class MonoBridge
 	{
 		stringsBuffer.Dispose();
 		proxyBuffer.Dispose();
+	}
+
+	public static void CollectGarbage()
+	{
+		lock(locker)
+		{
+			var maxgen = CallFunc(mono_gc_max_generation_ptr);
+			for(nuint i = 1; i < maxgen; i++)
+				CallFunc(mono_gc_collect_ptr, i);
+		}
 	}
 
 	internal static nuint GetImage(string dll)
@@ -194,7 +213,6 @@ public static unsafe class MonoBridge
 		}
 	}
 
-	// bad method
 	internal static void GetClassInfoS(string genstr, ref nuint klass, ref nuint vtable)
 	{
 #if DEBUG
@@ -226,7 +244,7 @@ public static unsafe class MonoBridge
 		}
 	}
 
-	internal static T GetStaticFieldValue<T>(nuint vtable, nuint field)
+	internal unsafe static T GetStaticFieldValue<T>(nuint vtable, nuint field)
 	{
 		lock (locker)
 		{
@@ -235,7 +253,7 @@ public static unsafe class MonoBridge
 		}
 	}
 
-	internal static void SetStaticFieldValue<T>(nuint vtable, nuint field, T value)
+	internal unsafe static void SetStaticFieldValue<T>(nuint vtable, nuint field, T value)
 	{
 		lock (locker)
 		{
@@ -280,6 +298,7 @@ public static unsafe class MonoBridge
 #endif
 			return 0;
 		}
+
 		return CallFunc(mono_object_unbox_ptr, boxed);
 	}
 
@@ -311,7 +330,7 @@ public static unsafe class MonoBridge
 		}
 	}
 
-	private static nuint CallMonoFunctionImpl(nuint func, nuint _this, nuint args)
+	private unsafe static nuint CallMonoFunctionImpl(nuint func, nuint _this, nuint args)
 	{
 		if (func == 0)
 			throw new Exception("Cant invoke nullptr method!");
@@ -490,16 +509,25 @@ public static unsafe class MonoBridge
 		}
 	}
 
+	// you can clear dictionary manually
+	public static Dictionary<(nuint, nuint), nuint> CachedVirtFunctions = new Dictionary<(nuint, nuint), nuint>();
+
 	internal static nuint GetVirtFunction(nuint _this, nuint func)
 	{
 		lock(locker)
 		{
-			var result = CallFunc(mono_object_get_virtual_method_ptr, _this, func);
+			if (CachedVirtFunctions.TryGetValue((_this, func), out var result))
+				return result;
+
+			result = CallFunc(mono_object_get_virtual_method_ptr, _this, func);
 #if DEBUG
 			Console.WriteLine($"GetVirtFunction({_this}, {func}) -> {result}");
 #endif
 			if (result == 0)
 				throw new Exception("Cant get virtual function!");
+
+			CachedVirtFunctions.Add((_this, func), result);
+
 			return result;
 		}
 	}
@@ -514,12 +542,13 @@ public static unsafe class MonoBridge
 		new Pointer<T>((nuint)_this + (nuint)offset, false, gameMemory).SetValue(ref value);
 	}
 
-	public static T Cast<T>(nuint target) where T : struct
+	public unsafe static T Cast<T>(nuint target) where T : struct
 	{
 #if DEBUG
 		Console.WriteLine($"CAST at {target} to {typeof(T).FullName}");
 #endif
-		return *(T*)&target; // haha pointers go brr
+		//return *(T*)&target; // haha pointers do memory leaks ><
+		return Unsafe.As<nuint, T>(ref target);
 	}
 
 	public static T ReadValueType<T>(nuint target) where T : struct
@@ -531,7 +560,7 @@ public static unsafe class MonoBridge
 		return res;
 	}
 
-	public static nuint BoxValue(nuint klass, nuint val)
+	public unsafe static nuint BoxValue(nuint klass, nuint val)
 	{
 		lock(locker)
 		{
@@ -540,7 +569,7 @@ public static unsafe class MonoBridge
 		}
 	}
 
-	public static string ReadString(nuint ptr, int length)
+	public unsafe static string ReadString(nuint ptr, int length)
 	{
 #if DEBUG
 		Console.WriteLine($"ReadString at {ptr} with length {length}");
@@ -561,7 +590,7 @@ public static unsafe class MonoBridge
 		return main.Insert(main.LastIndexOf("`1")+2, $"[[{gen1aqn}]]");
 	}
 
-	static byte[] AssembleCall() => asm.Assemble(new string[] {
+	static unsafe byte[] AssembleCall() => asm.Assemble(new string[] {
 		"use64",
 		"sub rsp, 40",
 		$"mov rax, qword [qword {(long)func.Address}]", // func ptr
@@ -575,7 +604,7 @@ public static unsafe class MonoBridge
 		 "ret"
 	});
 
-	static byte[] AssembleThreadSafeCall() => asm.Assemble(new string[] {
+	static unsafe byte[] AssembleThreadSafeCall() => asm.Assemble(new string[] {
 		"use64",
 		"sub rsp, 40",
 		$"mov rax, {mono_thread_attach_ptr}", // func ptr
