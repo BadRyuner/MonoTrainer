@@ -21,6 +21,7 @@ SDK.MonoBridge.Init(myGame);
 5) Have fun with GameSDK.* namespace!
 # Examples
 [The Last Stand Pseudo Trainer for old version](https://github.com/BadRyuner/MonoTrainer/blob/master/TheLastSpellTrainer/Program.cs)
+[Ravenfield + Raylib](https://github.com/BadRyuner/MonoTrainer/blob/master/RavenfieldExample/Program.cs)
 # Lib can do 100%
 - Get/Set non-generic fields and non-generic non-valuetype (!!!) properties.
 - Call non-generic methods (with instance and static) with 0-5 args.
@@ -28,6 +29,9 @@ SDK.MonoBridge.Init(myGame);
 
 # Partially working
 - Generics. Generic types (not generic methods!!) with 1 argument are currently supported, only methods.
+
+# Bugs
+- Dotnet or Mono sometimes lose pointers xD :D
 
 # Not working at the moment
 - And a lot of things, probably.
