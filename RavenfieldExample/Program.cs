@@ -1,42 +1,42 @@
-﻿using GameSDK.UnityEngine_CoreModule.UnityEngine.PlayerLoop;
+﻿using GameSDK.Assembly_CSharp;
 using Raylib_cs;
+using SDK;
 using System.Diagnostics;
 
 nuint lastexc = 0;
 
-SDK.MonoBridge.Init(Process.GetProcessesByName("ravenfield")[0]); // you can catch there exceptions
+MonoBridge.Init(Process.GetProcessesByName("ravenfield")[0]); // you can catch there exceptions
 
-Raylib.SetConfigFlags(ConfigFlags.FLAG_WINDOW_TRANSPARENT | ConfigFlags.FLAG_WINDOW_MOUSE_PASSTHROUGH | ConfigFlags.FLAG_WINDOW_TOPMOST); // 
-Raylib.InitWindow(1600, 900, "Test"); // idk how to get screen size
-Raylib.SetTargetFPS(30);
+var height = GameSDK.UnityEngine_CoreModule.UnityEngine.Screen.get_height();
+var width = GameSDK.UnityEngine_CoreModule.UnityEngine.Screen.get_width();
 
-var height = 900; // GameSDK.UnityEngine_CoreModule.UnityEngine.Screen.get_height()
+Raylib.SetConfigFlags(ConfigFlags.FLAG_WINDOW_TRANSPARENT | ConfigFlags.FLAG_VSYNC_HINT | ConfigFlags.FLAG_WINDOW_MOUSE_PASSTHROUGH | ConfigFlags.FLAG_WINDOW_TOPMOST); // 
+Raylib.InitWindow(width, height, "Aboba");
+//Raylib.SetTargetFPS(60);
 
 while (!Raylib.WindowShouldClose())
 {
 	Raylib.BeginDrawing();
 	Raylib.ClearBackground(Color.BLANK);
 
-	var instance = GameSDK.Assembly_CSharp.ActorManager.instance;
+	var instance = ActorManager.instance;
 	var camera = GameSDK.UnityEngine_CoreModule.UnityEngine.Camera.get_main();
-	if ((ulong)instance._this > 100 && (ulong)camera._this > 100)
+	if (IsAlive(instance._this) && IsAlive(camera._this))
 	{
 		var player = instance.player;
-		if ((ulong)player._this > 100)
+		if (IsAlive(player._this))
 		{
 			var myteam = player.GetBase().team;
-			var actors = GameSDK.Assembly_CSharp.ActorManager.AliveActorsOnTeam(myteam == 1 ? 0 : 1); // dont use general lists, sometimes they can show you GAME CRASHED, AAAAAAAAAGRH
-			CatchExc();
-			if ((ulong)actors._this < 100) goto render;
+			var actors = ActorManager.AliveActorsOnTeam(myteam == 1 ? 0 : 1); // dont use general lists, sometimes they can show you GAME CRASHED due LIST HAS BEEN CHANGED, AAAAAAAAAGRH
+			if ((ulong)actors._this < 100) goto render; // skip :(
 			var count = actors.get_Count();
 			for (int i = 0; i < count; i++) // this awful *_*
 			{
-				CatchExc();
-				var actor = actors.get_Item(i);
-				if ((ulong)actor._this < 100) continue;
+				var actor = actors.get_Item(i); // VeeeeeeeeeeeeeeeRY slow, because VIRTUAL
+				if (!IsAlive(actor._this)) continue;
 				var transform = actor.GetBase().GetBase().GetBase().GetBase().get_transform(); // this also awful
-				if ((ulong)transform._this < 100) continue;
-				var screen = camera.WorldToScreenPoint(transform.get_position()); // but this works
+				if (!IsAlive(transform._this)) continue;
+				var screen = camera.WorldToScreenPoint(transform.get_position()); // but it works
 
 				if (screen.z > 1)
 					Raylib.DrawCircle((int)screen.x, height - (int)screen.y, 3f, Color.MAGENTA);
@@ -48,13 +48,13 @@ while (!Raylib.WindowShouldClose())
 	Raylib.EndDrawing();
 }
 
-SDK.MonoBridge.Free();
+MonoBridge.Free();
 Raylib.CloseWindow();
 
 void CatchExc() // universal thing
 {
-	var exc = SDK.MonoBridge.refException.GetValue();
-	if (exc != 0 || exc == lastexc)
+	var exc = MonoBridge.refException.GetValue();
+	if (exc != 0 || exc != lastexc)
 	{
 		var excep = new GameSDK.mscorlib.System.Exception(exc);
 		var where = excep.GetStackTrace(false);
@@ -65,4 +65,10 @@ void CatchExc() // universal thing
 			Console.WriteLine(where.GetString());
 		lastexc = exc;
 	}
+}
+
+static bool IsAlive(UIntPtr test) // for Unity Objects only
+{
+	if (test == UIntPtr.Zero) return false;
+	return GameSDK.UnityEngine_CoreModule.UnityEngine.Object.IsNativeObjectAlive(MonoBridge.Cast<GameSDK.UnityEngine_CoreModule.UnityEngine.Object>(test));
 }

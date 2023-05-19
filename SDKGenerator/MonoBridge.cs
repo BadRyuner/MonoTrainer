@@ -195,21 +195,19 @@ public static unsafe class MonoBridge
 	}
 
 	// bad method
-	internal static void GetClassInfoS(string genstr, Type arg1, ref nuint klass, ref nuint vtable)
+	internal static void GetClassInfoS(string genstr, ref nuint klass, ref nuint vtable)
 	{
-		var arg1str = arg1.GetMethod("aqn").Invoke(null, null) as string;
-		var finalstr = genstr.Replace("`1", $"`1[[{arg1str}]]");
 #if DEBUG
-		Console.WriteLine($"GetClassInfoS -> finalstr -> {finalstr}");
+		Console.WriteLine($"GetClassInfoS for {genstr}");
 #endif
-		var type = GetTypeFromStr_Inject(finalstr);
+		var type = GetTypeFromStr_Inject(genstr);
 
 		lock (locker)
 		{
 			klass = CallFunc(mono_class_from_mono_type_ptr, type);
 			vtable = 0; // skip at this moment
 #if DEBUG
-			Console.WriteLine($"GetClassInfoS({arg1}, {klass}, {vtable})");
+			Console.WriteLine($"GetClassInfoS result ({klass}, {vtable})");
 #endif
 		}
 	}
@@ -555,6 +553,12 @@ public static unsafe class MonoBridge
 	public static nuint AllocStr(string str)
 	{
 		return CallFunc(mono_string_new_ptr, domain, stringsBuffer.Add(Encoding.UTF8.GetBytes(str + '\0')));
+	}
+
+	internal static string ConstructGenericAQNFrom1(string main, Type gen1)
+	{
+		var gen1aqn = gen1.GetMethod("aqn").Invoke(null, null) as string;
+		return main.Insert(main.LastIndexOf("`1")+2, $"[[{gen1aqn}]]");
 	}
 
 	static byte[] AssembleCall() => asm.Assemble(new string[] {
