@@ -6,7 +6,7 @@ internal unsafe class Program
 {
 	static void Main(string[] args)
 	{
-#if true
+#if false
 		args = new string[] { "D:\\Games\\Ravenfield v08.11.2022\\ravenfield_Data\\Managed\\Assembly-CSharp.dll" };
 		// D:\Steam\steamapps\common\PULSARLostColony\PULSAR_LostColony_Data\Managed\LevelScanner.dll
 		// D:\\Games\\The Last Spell\\The Last Spell_Data\\Managed\\TheLastStand.dll
