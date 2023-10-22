@@ -9,18 +9,24 @@ using AsmResolver.PE.DotNet.Cil;
 using AsmResolver.DotNet.Signatures;
 using AsmResolver.DotNet.Code.Cil;
 using AsmResolver;
-using System.Data.SqlTypes;
 using AsmResolver.DotNet.Serialized;
-using System.ComponentModel.Design;
-using System.Linq;
+
+// It's been so long that I don't understand this shitcode anymore.
+// Only refuctoring will save this shitcode.
+// But it's working at 92%
 
 namespace SDKGenerator;
 public class Generator
 {
+	Arguments args;
+	bool use_whitelist;
+
 	string path;
 
 	DirectoryInfo dest;
 	DirectoryInfo managed;
+
+	ModuleReaderParameters moduleReaderParams;
 
 	AssemblyDefinition ThisAssembly;
 	AssemblyDefinition TargetAssembly;
@@ -35,15 +41,14 @@ public class Generator
 	ITypeDefOrRef pointer;
 
 	ITypeDefOrRef Enum;
-	//IMethodDescriptor EFlags;
 
 	MethodDefinition GetImage;
 	MethodDefinition GetClassInfo;
 	MethodDefinition GetClassInfoS;
 	MethodDefinition GetFieldInfo;
 	MethodDefinition FieldOffset;
-	MethodDefinition SetStaticVal; // generic fck
-	MethodDefinition GetStaticVal; // generic fck
+	MethodDefinition SetStaticVal; // generic fck, because it's easy to shoot yourself in the foot
+	MethodDefinition GetStaticVal; // generic fck, don't mess around with that.
 	MethodDefinition GetInstanceFieldValue; // generic fck
 	MethodDefinition SetInstanceFieldValue; // generic fck
 	MethodDefinition GetMethodInfo;
@@ -65,29 +70,33 @@ public class Generator
 	IMethodDescriptor gettype;
 	TypeDefinition ArrayType;
 	TypeSignature ArraySig;
-	//FieldDefinition gameMem; // unused
 
-	public Generator(string path)
+	public Generator(string path, Arguments args)
 	{
 		this.path = path;
+		this.args = args;
+		use_whitelist = args.ClassWhitelist != null;
+
 		managed = new FileInfo(path).Directory;
+		moduleReaderParams = new ModuleReaderParameters(managed.FullName);
 		ThisAssembly = AssemblyDefinition.FromFile(typeof(Generator).Assembly.Location);
-		TargetAssemblyModule = ModuleDefinition.FromFile(path, new ModuleReaderParameters(managed.FullName));
+		TargetAssemblyModule = ModuleDefinition.FromFile(path, moduleReaderParams);
 		TargetAssembly = TargetAssemblyModule.Assembly;
-		//var t = TargetAssemblyModule.TopLevelTypes[7].Methods[0].CilMethodBody.Instructions[0].Operand;
-		//Console.WriteLine(t.GetType());
 		SDK = new AssemblyDefinition("GameSDK", new Version(1,0,0,0));
-		SDKModule = new ModuleDefinition("GameSDK", KnownCorLibs.SystemRuntime_v6_0_0_0);
+		SDKModule = new ModuleDefinition("GameSDK", KnownCorLibs.SystemRuntime_v6_0_0_0); // TODO: get knowncorlibs from current exe
 		SDK.Modules.Add(SDKModule);
 
+		// fixes some rare bug
 		var framework = ThisAssembly.CustomAttributes.First(ca => ca.Constructor.DeclaringType.IsTypeOf("System.Runtime.Versioning", "TargetFrameworkAttribute"));
 		SDK.CustomAttributes.Add(new CustomAttribute((ICustomAttributeType)SDKModule.DefaultImporter.ImportMethod(framework.Constructor), framework.Signature));
 	}
 
 	public void GenerateSDK(string destination)
 	{
+		// get destination dir
 		dest = Directory.Exists(destination) ? new DirectoryInfo(destination) : Directory.CreateDirectory(destination);
 
+		// clone MonoBridge class to GameSDK dll
 		var cloned = new MemberCloner(SDKModule)
 			.Include(ThisAssembly.ManifestModule.TopLevelTypes.First(t => t.Name == "MonoBridge"))
 			.Clone();
@@ -95,14 +104,15 @@ public class Generator
 		Mono.Namespace = "SDK";
 		SDKModule.TopLevelTypes.Add(Mono);
 
-		//valtype = SDKModule.DefaultImporter.ImportType(typeof(ValueType));
+		// setup basic fields (aka metadata) for generation
 		valtype = SDKModule.CorLibTypeFactory.CorLibScope.CreateTypeReference("System", "ValueType").ImportWith(SDKModule.DefaultImporter);
 		nativeint = SDKModule.CorLibTypeFactory.UIntPtr.Type;
 		pointer = SDKModule.DefaultImporter.ImportType(typeof(Pointer<>));
 		pointer = pointer.ToTypeSignature().ImportWith(SDKModule.DefaultImporter).ToTypeDefOrRef();
 		Enum = SDKModule.DefaultImporter.ImportType(typeof(Enum));
-		//EFlags = SDKModule.DefaultImporter.ImportMethod(typeof(System.FlagsAttribute).GetConstructors()[0]);
+		gettype = SDKModule.DefaultImporter.ImportMethod(typeof(Type).GetMethod(nameof(Type.GetTypeFromHandle)));
 
+		// setup methods from MonoBridge
 		GetImage = Mono.Methods.First(m => m.Name == nameof(MonoBridge.GetImage));
 		GetClassInfo = Mono.Methods.First(m => m.Name == nameof(MonoBridge.GetClassInfo));
 		GetClassInfoS = Mono.Methods.First(m => m.Name == nameof(MonoBridge.GetClassInfoS));
@@ -128,16 +138,12 @@ public class Generator
 		GetVirtFunc = Mono.Methods.First(m => m.Name == nameof(MonoBridge.GetVirtFunction));
 		ConstructGenericAQNFrom1 = Mono.Methods.First(m => m.Name == nameof(MonoBridge.ConstructGenericAQNFrom1));
 
-		//var type = SDKModule.CorLibTypeFactory.CorLibScope.CreateTypeReference("System", "Type");
-		//var rtype = SDKModule.CorLibTypeFactory.CorLibScope.CreateTypeReference("System", "RuntimeTypeHandle");
-		//gettype = type.CreateMemberReference("GetTypeFromHandle", MethodSignature.CreateStatic(type.ToTypeSignature(), rtype.ToTypeSignature())).ImportWith(SDKModule.DefaultImporter);
-		gettype = SDKModule.DefaultImporter.ImportMethod(typeof(Type).GetMethod(nameof(Type.GetTypeFromHandle)));
-		//gameMem = Mono.Fields.First(m => m.Name == nameof(MonoBridge.gameMemory));
-
+		// Class which contains all assembly names
 		asmContainer = new TypeDefinition("SDK", "Assemblies", TypeAttributes.Public, SDKModule.CorLibTypeFactory.Object.Type);
 		SDKModule.TopLevelTypes.Add(asmContainer);
 		asmContainer.GetOrCreateStaticConstructor().CilMethodBody.Instructions.Clear();
 
+		// filter field
 		IEnumerable<TypeDefinition> goodTypes;
 
 		var bas = TargetAssemblyModule.AssemblyReferences.FirstOrDefault(m => m.Name == "mscorlib")?.Resolve().ManifestModule;
@@ -149,44 +155,67 @@ public class Generator
 			WriteType(bas.TopLevelTypes.First(t => t.FullName == "System.Array"), out ArrayType);
 			ArraySig = ArrayType.ToTypeSignature();
 
-			goodTypes = bas.TopLevelTypes.Where(t =>!t.IsInterface && t.GenericParameters.Count == 0);
+			if (args.GetEverythingFromMscorlib)
+			{
+				goodTypes = bas.TopLevelTypes.Where(t => !t.IsInterface && t.GenericParameters.Count == 0);
+				foreach (var i in goodTypes)
+				{
+					WriteType(i, out _);
+				}
+			}
+		}
+
+		// get target dll and filter types
+		foreach (var dll in args.TargetDlls)
+		{
+			var copy = dll;
+			if (copy[0] == ' ') // nice joke, CommandLine.
+				copy = dll.Remove(0, 1);
+
+			var module = ModuleDefinition.FromFile(copy, moduleReaderParams);
+
+			if (use_whitelist)
+				goodTypes = module.GetAllTypes().Where(t => args.ClassWhitelist.Contains(t.FullName));
+			else
+				goodTypes = module.TopLevelTypes.Where(t => !t.IsInterface && t.GenericParameters.Count == 0);
+
+			// write proxies for all good types
 			foreach (var i in goodTypes)
 			{
 				WriteType(i, out _);
 			}
 		}
 
-		goodTypes = TargetAssemblyModule.TopLevelTypes.Where(t => !t.IsInterface && t.GenericParameters.Count == 0);
-
-		foreach (var i in goodTypes)
+		// force write all types from Unity.CoreModule
+		if (args.GetEverythingFromUnityCoreModule)
 		{
-			WriteType(i, out _);
-		}
-
-		var ue = TargetAssemblyModule.AssemblyReferences.FirstOrDefault(m => m.Name == "UnityEngine.CoreModule")?.Resolve().ManifestModule;
-		if (ue != null)
-		{
-			goodTypes = ue.TopLevelTypes.Where(t => !t.IsInterface && t.GenericParameters.Count == 0);
-			foreach (var i in goodTypes)
+			var ue = TargetAssemblyModule.AssemblyReferences.FirstOrDefault(m => m.Name == "UnityEngine.CoreModule")?.Resolve().ManifestModule;
+			if (ue != null)
 			{
-				WriteType(i, out _);
+				goodTypes = ue.TopLevelTypes.Where(t => !t.IsInterface && t.GenericParameters.Count == 0);
+				foreach (var i in goodTypes)
+				{
+					WriteType(i, out _);
+				}
 			}
 		}
 
 		asmContainer.GetOrCreateStaticConstructor().CilMethodBody.Instructions.Add(CilOpCodes.Ret);
 
+		// Write Helper Methods (i.e: ReadString and CreateString)
 		WriteHelpers();
 
+		// save GameSDK dll
 		SDK.Write(Path.Combine(destination, "GameSDK.dll"));
 	}
 
-	Dictionary<string, TypeDefinition> Bridge = new Dictionary<string, TypeDefinition>();
-	TypeDefinition GetProxyTypeSafe(TypeDefinition target)
+	Dictionary<string, TypeDefinition> Bridge = new Dictionary<string, TypeDefinition>(); // cache
+	TypeDefinition GetProxyTypeSafe(TypeDefinition target) // Return proxy type
 	{
-		if (Bridge.TryGetValue(target.FullName, out var result))
+		if (Bridge.TryGetValue(target.FullName, out var result)) // try get one from cache
 			return result;
 
-		if (target.IsValueType)
+		if (target.IsValueType) // primitive types must be ignored
 		{
 			if (target.IsTypeOf("System", "Void"))
 			{
@@ -280,6 +309,7 @@ public class Generator
 			}
 		}
 
+		// generate one
 		WriteType(target, out var r);
 
 		return r;
@@ -684,6 +714,7 @@ public class Generator
 			bool retval = proxy.Signature.ReturnsValue;
 			var retType = proxy.Signature.ReturnType;
 
+			// hardcoded
 			switch (paramCount)
 			{
 				case 0:
@@ -755,16 +786,20 @@ public class Generator
 			var body = new CilMethodBody(getstr);
 			getstr.CilMethodBody = body;
 			var b = body.Instructions;
-			var charoffset = str.Fields.First(f => f.Name == "m_firstChar_offset");
+												//				Net 4.X			  ||			Net 3.X
+			var charoffset = str.Fields.First(f => f.Name == "m_firstChar_offset" || f.Name == "start_char_offset");
 			var _this = str.Fields.First(f => f.Name == "_this");
 			b.Add(CilOpCodes.Ldarg_0);
 			b.Add(CilOpCodes.Ldfld, _this);
 			b.Add(CilOpCodes.Ldsfld, charoffset);
 			b.Add(CilOpCodes.Add); // ptr to chars
 			b.Add(CilOpCodes.Ldarg_0);
-			b.Add(CilOpCodes.Call, str.Methods.First(m => m.Name == "get_m_stringLength"));
+			b.Add(CilOpCodes.Call, str.Methods.First(m => m.Name == "get_m_stringLength" || m.Name == "get_length"));
+			// Call MonoBridge.ReadString(first_char_pointer, length);
 			b.Add(CilOpCodes.Call, ReadString);
 			b.Add(CilOpCodes.Ret);
+
+			// result: return MonoBridge.ReadString(this._this + first_char_offset, this.get_Length());
 
 			var createstr = new MethodDefinition("InjectString", MethodAttributes.Public | MethodAttributes.Static, MethodSignature.CreateStatic(str.ToTypeSignature(), truesting));
 			body = new CilMethodBody(createstr);
@@ -801,9 +836,10 @@ public class Generator
 		}
 	}
 
+	// unstable piece of shit
 	private static string Clear(TypeSignature sig)
 	{
-		switch(sig.Name)
+		switch(sig.Name) // good
 		{
 			case "String": return "string";
 			case "Single": return "single";
@@ -822,7 +858,7 @@ public class Generator
 		}
 		if (sig.FullName == "System.Object") return "object";
 
-		if (sig is PointerTypeSignature pts)
+		if (sig is PointerTypeSignature pts) // why
 		{
 			switch (pts.Name)
 			{
@@ -841,7 +877,7 @@ public class Generator
 				case "UInt64*": return "ulong*";
 			}
 		}
-		else if (sig is ArrayBaseTypeSignature ats)
+		else if (sig is ArrayBaseTypeSignature ats) // why x2
 		{
 			switch (ats.Name)
 			{

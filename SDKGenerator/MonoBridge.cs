@@ -13,7 +13,8 @@ namespace SDKGenerator;
 #if true
 public static class MonoBridge
 {
-	const string mono = "mono-2.0-bdwgc.dll";
+	const string mono = "mono.dll";
+	const string mono2 = "mono-2.0-bdwgc.dll";
 	const string mono_domain_get = "mono_get_root_domain";
 	const string mono_thread_attach = "mono_thread_attach";
 	const string mono_class_vtable = "mono_class_vtable";
@@ -111,7 +112,7 @@ public static class MonoBridge
 		proxy = proxyBuffer.Add(_call);
 		foreach (ProcessModule module in game.Modules)
 		{
-			if (module.ModuleName == mono)
+			if (module.ModuleName == mono || module.ModuleName == mono2)
 			{
 				monomodule = (long)module.BaseAddress;
 				break;
@@ -584,6 +585,8 @@ public static class MonoBridge
 		return CallFunc(mono_string_new_ptr, domain, stringsBuffer.Add(Encoding.UTF8.GetBytes(str + '\0')));
 	}
 
+	// Gets Type Info for usage in Type.Get.
+	// Ex: List<int> -> System.Collections.Generic`1[[System.Int32]]
 	internal static string ConstructGenericAQNFrom1(string main, Type gen1)
 	{
 		var gen1aqn = gen1.GetMethod("aqn").Invoke(null, null) as string;

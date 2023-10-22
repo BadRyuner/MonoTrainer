@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Reloaded.Assembler" Version="1.0.14" />
+		<PackageReference Include="Reloaded.Injector" Version="1.2.5" />
+		<PackageReference Include="Reloaded.Memory" Version="8.1.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Folder Include="SDK\" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Reference Include="GameSDK">
+	    <HintPath>SDK\GameSDK.dll</HintPath>
+	  </Reference>
+	</ItemGroup>
+
+</Project>
