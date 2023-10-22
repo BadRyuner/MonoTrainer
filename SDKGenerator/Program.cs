@@ -7,7 +7,7 @@ internal unsafe class Program
 {
 	static void Main(string[] args)
 	{
-#if true
+#if false
 		args = new string[] { "-f",
 			"D:/Games/Endless Space 2 Dark Matter/EndlessSpace2_Data/Managed/Assembly-CSharp.dll",
 			"-w",
