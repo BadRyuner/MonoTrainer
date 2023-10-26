@@ -787,14 +787,14 @@ public class Generator
 			getstr.CilMethodBody = body;
 			var b = body.Instructions;
 												//				Net 4.X			  ||			Net 3.X
-			var charoffset = str.Fields.First(f => f.Name == "m_firstChar_offset" || f.Name == "start_char_offset");
+			var charoffset = str.Fields.First(f => f.Name == "m_firstChar_offset" || f.Name == "start_char_offset" || f.Name == "_firstChar_offset");
 			var _this = str.Fields.First(f => f.Name == "_this");
 			b.Add(CilOpCodes.Ldarg_0);
 			b.Add(CilOpCodes.Ldfld, _this);
 			b.Add(CilOpCodes.Ldsfld, charoffset);
 			b.Add(CilOpCodes.Add); // ptr to chars
 			b.Add(CilOpCodes.Ldarg_0);
-			b.Add(CilOpCodes.Call, str.Methods.First(m => m.Name == "get_m_stringLength" || m.Name == "get_length"));
+			b.Add(CilOpCodes.Call, str.Methods.First(m => m.Name == "get_m_stringLength" || m.Name == "get_length" || m.Name == "get__stringLength"));
 			// Call MonoBridge.ReadString(first_char_pointer, length);
 			b.Add(CilOpCodes.Call, ReadString);
 			b.Add(CilOpCodes.Ret);
