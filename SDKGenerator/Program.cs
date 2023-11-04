@@ -7,13 +7,13 @@ internal unsafe class Program
 {
 	static void Main(string[] args)
 	{
-#if false
+#if true
 		args = new string[] { "-f",
-			"D:/Games/Endless Space 2 Dark Matter/EndlessSpace2_Data/Managed/Assembly-CSharp.dll",
+			"Cities2_Data\\Managed\\Game.dll",
 			"-w",
-			"AcademyCouncil",
-			"Amplitude.StaticString",
-			"DepartmentOfCommerce"};
+			"Game.City.PlayerMoney",
+			"Game.Simulation.CitySystem"
+		};
 #endif
 		Parser.Default.ParseArguments<Arguments>(args)
 			.WithParsed((res) =>

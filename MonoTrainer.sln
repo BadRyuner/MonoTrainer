@@ -9,7 +9,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TheLastSpellTrainer", "TheL
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RavenfieldExample", "RavenfieldExample\RavenfieldExample.csproj", "{F2CC0CBD-C080-45F8-AC8A-B3B7005ADFEA}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EndlessSpaceTrainer", "EndlessSpaceTrainer\EndlessSpaceTrainer.csproj", "{134AF519-482D-458C-8C56-A279E8757485}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SkylinesTest", "SkylinesTest\SkylinesTest.csproj", "{0394C7D7-74C3-4859-B0F3-6B553C31B14F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -29,10 +29,10 @@ Global
 		{F2CC0CBD-C080-45F8-AC8A-B3B7005ADFEA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F2CC0CBD-C080-45F8-AC8A-B3B7005ADFEA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F2CC0CBD-C080-45F8-AC8A-B3B7005ADFEA}.Release|Any CPU.Build.0 = Release|Any CPU
-		{134AF519-482D-458C-8C56-A279E8757485}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{134AF519-482D-458C-8C56-A279E8757485}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{134AF519-482D-458C-8C56-A279E8757485}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{134AF519-482D-458C-8C56-A279E8757485}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0394C7D7-74C3-4859-B0F3-6B553C31B14F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0394C7D7-74C3-4859-B0F3-6B553C31B14F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0394C7D7-74C3-4859-B0F3-6B553C31B14F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0394C7D7-74C3-4859-B0F3-6B553C31B14F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

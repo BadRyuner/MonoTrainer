@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -11,7 +12,7 @@ using Reloaded.Memory.Utilities;
 
 namespace SDKGenerator;
 #if true
-public static class MonoBridge
+public static partial class MonoBridge
 {
 	const string mono = "mono.dll";
 	const string mono2 = "mono-2.0-bdwgc.dll";
@@ -72,6 +73,7 @@ public static class MonoBridge
 	static CircularBuffer stringsBuffer;
 	static CircularBuffer argsPtrBuffer;
 	static CircularBuffer argsContentBuffer;
+	static CircularBuffer dirtyBuffer;
 	internal static IMemory gameMemory;
 	static Pointer<nuint> result;
 	static Pointer<nuint> func;
@@ -107,6 +109,7 @@ public static class MonoBridge
 		arg4 = new Pointer<nuint>(proxyBuffer.Add(8), false, gameMemory);
 		refPointer = new Pointer<nuint>(proxyBuffer.Add(256), false, gameMemory);
 		refException = new Pointer<nuint>(proxyBuffer.Add(8), false, gameMemory);
+		dirtyBuffer = new CircularBuffer(1024, gameMemory);
 		asm = new Assembler();
 		var _call = AssembleCall();
 		proxy = proxyBuffer.Add(_call);
@@ -387,8 +390,16 @@ public static class MonoBridge
 				argsPtrBuffer.Add(ref arg1);
 			if (vt2)
 			{
-				var arg2Content = argsContentBuffer.Add(ref arg2);
-				argsPtrBuffer.Add(ref arg2Content);
+				if (typeof(T2).IsEnum)
+				{
+					var arg2Content = argsContentBuffer.Add(ref Unsafe.As<T2, long>(ref arg2));
+					argsPtrBuffer.Add(ref arg2Content);
+				}
+				else
+				{
+					var arg2Content = argsContentBuffer.Add(ref arg2);
+					argsPtrBuffer.Add(ref arg2Content);
+				}
 			}
 			else
 				argsPtrBuffer.Add(ref arg2);
@@ -587,10 +598,44 @@ public static class MonoBridge
 
 	// Gets Type Info for usage in Type.Get.
 	// Ex: List<int> -> System.Collections.Generic`1[[System.Int32]]
+	// TODO: replace Type with IType
 	internal static string ConstructGenericAQNFrom1(string main, Type gen1)
 	{
 		var gen1aqn = gen1.GetMethod("aqn").Invoke(null, null) as string;
 		return main.Insert(main.LastIndexOf("`1")+2, $"[[{gen1aqn}]]");
+	}
+
+	internal static nuint GetGenericMethod<Klass, T1>(string name) where Klass : IType where T1 : IType
+	{
+		// System* replaced with Gamesdk.mscorlib.System*
+		return (nuint)(long)Type.GetType(Klass.aqn())
+			.GetMethod(name, (BindingFlags)(4 | 8 | 16 | 32))
+			.MakeGenericMethod(IgnoreMePlz<T1>())
+			.MethodHandle.Value;
+	}
+
+	private static Type[] IgnoreMePlz<T>() where T : IType => new Type[0];
+
+	internal static nuint CreateDirtyTypeArray<T>() where T : IType
+	{
+#if DEBUG
+		Console.WriteLine($"-> CreateDirtyTypeArray<{typeof(T).Name}>()");
+#endif
+		dirtyBuffer.Offset = 0;
+		var ptr = dirtyBuffer.Address;
+		dirtyBuffer.Add(new byte[8]); // write array type pointer
+		dirtyBuffer.Add(BitConverter.GetBytes(1ul)); // write array size
+		var typeof1 = GetTypeHandleFromTypeOf(T.TypeOf());
+		dirtyBuffer.Add(ref typeof1); // write first element
+#if DEBUG
+		Console.WriteLine($"<- CreateDirtyTypeArray<{typeof(T).Name}>()");
+#endif
+		return dirtyBuffer.Address;
+	}
+
+	internal static nuint GetTypeHandleFromTypeOf(nuint type) // replaced
+	{
+		throw null; // runtimetypehandle says "crash"
 	}
 
 	static unsafe byte[] AssembleCall() => asm.Assemble(new string[] {
